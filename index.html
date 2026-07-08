@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#bfe6f6" />
+    <title>Calorie Lens</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header" aria-label="应用顶部">
+        <button class="pill-button" type="button" aria-label="今天">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 3v3M16 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2Z" />
+          </svg>
+          今日
+        </button>
+        <div class="brand">
+          <p>Calorie Lens Pro</p>
+          <h1>食物热量识别</h1>
+        </div>
+        <button class="profile-button" type="button" aria-label="账户">
+          <span>Pro</span>
+          <img
+            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 80'%3E%3Crect width='80' height='80' rx='40' fill='%23f6d4c3'/%3E%3Ccircle cx='40' cy='30' r='15' fill='%2322252e'/%3E%3Cpath d='M18 70c4-19 16-30 22-30s18 11 22 30' fill='%2385a5ff'/%3E%3Ccircle cx='34' cy='33' r='3' fill='%23fff'/%3E%3Ccircle cx='46' cy='33' r='3' fill='%23fff'/%3E%3Cpath d='M33 48c5 4 10 4 15 0' stroke='%23a45b46' stroke-width='4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"
+            alt=""
+          />
+        </button>
+      </header>
+
+      <section class="date-strip" aria-label="日期选择">
+        <span>6</span>
+        <span class="active">7</span>
+        <span>8</span>
+        <span>9</span>
+        <span>10</span>
+        <span>11</span>
+        <span>12</span>
+      </section>
+
+      <section class="hero-card" aria-label="食物热量计算">
+        <div class="hero-copy">
+          <p>AI 食物识别</p>
+          <h2>拍照或上传一张食物图片</h2>
+          <span>自动估算卡路里、份量和三大营养素</span>
+        </div>
+
+        <label class="photo-uploader" for="food-photo">
+          <input id="food-photo" type="file" accept="image/*" capture="environment" />
+          <img id="preview-image" class="preview-image" alt="上传的食物照片预览" />
+          <span class="upload-empty" id="upload-empty">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 8h4l2-3h4l2 3h4v11H4z" />
+              <circle cx="12" cy="13" r="3.2" />
+            </svg>
+            <strong>上传食物图片</strong>
+            <small>支持拍照或从相册选择</small>
+          </span>
+        </label>
+
+        <div class="hero-actions">
+          <button id="analyze-button" class="primary-button" type="button" disabled>
+            计算卡路里
+          </button>
+          <button id="reset-button" class="soft-icon-button" type="button" aria-label="重置">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v5h5" />
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <section class="result-panel" aria-live="polite" aria-label="卡路里计算结果">
+        <div id="empty-state" class="state-block">
+          <div>
+            <p class="panel-kicker">等待图片</p>
+            <h2>上传后生成热量报告</h2>
+            <p>结果将展示食物名称、预估热量、份量和营养结构。</p>
+          </div>
+          <span class="tiny-badge">AI</span>
+        </div>
+
+        <div id="loading-state" class="state-block hidden">
+          <div>
+            <div class="scan-line" aria-hidden="true"></div>
+            <p class="panel-kicker">正在计算</p>
+            <h2>分析食物图片</h2>
+            <p>正在识别食材、烹饪方式和可能的份量。</p>
+          </div>
+        </div>
+
+        <div id="result-state" class="result-state hidden">
+          <div class="score-row">
+            <div>
+              <p class="panel-kicker">预估卡路里</p>
+              <h2><span id="calories">0</span><small> kcal</small></h2>
+            </div>
+            <span id="confidence" class="confidence">92%</span>
+          </div>
+
+          <div class="food-summary">
+            <p id="food-name">香煎鸡胸沙拉</p>
+            <span id="portion">约 320g</span>
+          </div>
+
+          <div class="macro-grid" aria-label="营养素">
+            <div>
+              <span>蛋白质</span>
+              <strong id="protein">0g</strong>
+            </div>
+            <div>
+              <span>碳水</span>
+              <strong id="carbs">0g</strong>
+            </div>
+            <div>
+              <span>脂肪</span>
+              <strong id="fat">0g</strong>
+            </div>
+          </div>
+
+          <div class="insight">
+            <span aria-hidden="true"></span>
+            <p id="insight">蛋白质占比较高，适合作为训练后正餐。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-grid" aria-label="计算能力">
+        <article>
+          <span></span>
+          <h2>食物识别</h2>
+          <p>识别主食、肉类、蔬菜和酱料。</p>
+        </article>
+        <article>
+          <span></span>
+          <h2>热量估算</h2>
+          <p>根据图片推算份量和卡路里。</p>
+        </article>
+      </section>
+
+      <nav class="bottom-nav" aria-label="底部导航">
+        <a class="active" href="#">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 11h6M9 15h6M8 4h8l2 3v13H6V7z" />
+          </svg>
+          识别
+        </a>
+        <a href="#">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 19V5M5 19h14M9 16v-5M13 16V8M17 16v-8" />
+          </svg>
+          记录
+        </a>
+        <a href="#">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 19h10M8 19V9a4 4 0 0 1 8 0v10M6 12h12" />
+          </svg>
+          食谱
+        </a>
+        <a href="#">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 7v5l3 2M12 3a9 9 0 1 0 9 9" />
+          </svg>
+          我的
+        </a>
+        <label class="floating-add" for="food-photo" aria-label="拍照上传">+</label>
+      </nav>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
