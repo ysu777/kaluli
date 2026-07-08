@@ -136,6 +136,8 @@ function renderResult(result) {
   document.querySelector("#confidence").textContent = result.confidence;
   document.querySelector("#food-name").textContent = result.food;
   document.querySelector("#portion").textContent = result.portion;
+  document.querySelector("#calorie-range").textContent = formatCalorieRange(result);
+  document.querySelector("#food-items").textContent = formatFoodItems(result);
   document.querySelector("#protein").textContent = result.protein;
   document.querySelector("#carbs").textContent = result.carbs;
   document.querySelector("#fat").textContent = result.fat;
@@ -150,4 +152,19 @@ function renderError(error) {
 function restoreEmptyCopy() {
   emptyState.querySelector("h2").textContent = emptyTitle;
   emptyState.querySelector("p:last-child").textContent = emptyDescription;
+}
+
+function formatCalorieRange(result) {
+  const min = result.calorieRange?.min;
+  const max = result.calorieRange?.max;
+  if (!min || !max) return "估算值";
+  return `约 ${min}-${max} kcal`;
+}
+
+function formatFoodItems(result) {
+  if (!Array.isArray(result.items) || !result.items.length) return "按整餐估算";
+  return result.items
+    .slice(0, 3)
+    .map((item) => item.name)
+    .join("、");
 }

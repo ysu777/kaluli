@@ -7,6 +7,36 @@ const HOST = process.env.HOST || "127.0.0.1";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const ROOT = __dirname;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const FOOD_ANALYSIS_PROMPT = [
+  "你是面向中国用户的营养师和食物图像识别助手。",
+  "任务：根据用户上传的食物图片，识别食物，估算总卡路里、份量和三大营养素。",
+  "优先考虑中国饮食场景：米饭、面条、粉、粥、馒头、包子、饺子、炒菜、盖饭、麻辣烫、火锅、烧烤、卤味、汤粉面、地方小吃。",
+  "估算规则：",
+  "1. 先识别可见食材、主食、肉类、蔬菜、酱汁和油炸/煎炒/炖煮等烹饪方式。",
+  "2. 无法看出重量时，按常见餐盘份量估算，并在 assumptions 里说明。",
+  "3. 中餐油、糖、酱汁差异大时，给出保守范围，不要伪装成精确称重。",
+  "4. 混合菜、盖饭、火锅、麻辣烫、汤粉面必须考虑汤底/酱汁/油量不确定性。",
+  "5. 如果图片不是食物或无法识别，isFood=false，并给出原因。",
+  "只返回 JSON，不要 Markdown，不要解释文字。",
+  "JSON 字段必须是：",
+  "{",
+  "  \"isFood\": true,",
+  "  \"food\": \"识别出的食物名称，尽量用中文菜名\",",
+  "  \"calories\": 612,",
+  "  \"calorieRange\": {\"min\": 520, \"max\": 720},",
+  "  \"confidence\": \"89%\",",
+  "  \"portion\": \"约 380g\",",
+  "  \"protein\": \"34g\",",
+  "  \"carbs\": \"52g\",",
+  "  \"fat\": \"29g\",",
+  "  \"items\": [",
+  "    {\"name\": \"米饭\", \"portion\": \"约 150g\", \"calories\": 174},",
+  "    {\"name\": \"番茄炒蛋\", \"portion\": \"约 220g\", \"calories\": 310}",
+  "  ],",
+  "  \"assumptions\": [\"按普通家常炒菜油量估算\", \"图片无法确认实际重量\"],",
+  "  \"insight\": \"一句中文建议，必须提示这是估算值\"",
+  "}",
+].join("\n");
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -79,11 +109,7 @@ async function callOpenAI(imageDataUrl) {
           content: [
             {
               type: "input_text",
-              text:
-                "你是营养师。请识别图片里的食物，并估算总卡路里、份量、蛋白质、碳水、脂肪和一句饮食建议。" +
-                "只返回 JSON，不要 Markdown。JSON 字段必须是：" +
-                "{\"food\":\"食物名称\",\"calories\":数字,\"confidence\":\"百分比\",\"portion\":\"约 xxg\",\"protein\":\"xxg\",\"carbs\":\"xxg\",\"fat\":\"xxg\",\"insight\":\"一句建议\"}。" +
-                "如果无法判断，请给出最合理估算，并在 insight 里说明不确定性。",
+              text: FOOD_ANALYSIS_PROMPT,
             },
             {
               type: "input_image",
@@ -130,16 +156,70 @@ function parseJsonFromText(text) {
 }
 
 function normalizeFoodResult(result) {
+  if (result.isFood === false) {
+    throw new Error(String(result.insight || "图片中未识别到可计算热量的食物。"));
+  }
+
+  const calories = Math.max(0, Number.parseInt(result.calories, 10) || 0);
+  const calorieRange = normalizeCalorieRange(result.calorieRange, calories);
+  const assumptions = normalizeStringList(result.assumptions);
+  const insight = buildInsight(result.insight, calorieRange, assumptions);
+
   return {
     food: String(result.food || "未知食物"),
-    calories: Math.max(0, Number.parseInt(result.calories, 10) || 0),
+    calories,
+    calorieRange,
     confidence: String(result.confidence || "80%"),
     portion: String(result.portion || "约 1 份"),
     protein: String(result.protein || "0g"),
     carbs: String(result.carbs || "0g"),
     fat: String(result.fat || "0g"),
-    insight: String(result.insight || "图片识别结果为估算值，仅供参考。"),
+    items: normalizeItems(result.items),
+    assumptions,
+    insight,
   };
+}
+
+function normalizeCalorieRange(range, calories) {
+  const min = Number.parseInt(range?.min, 10);
+  const max = Number.parseInt(range?.max, 10);
+
+  if (Number.isFinite(min) && Number.isFinite(max) && min > 0 && max >= min) {
+    return { min, max };
+  }
+
+  if (!calories) return { min: 0, max: 0 };
+
+  return {
+    min: Math.round(calories * 0.82),
+    max: Math.round(calories * 1.18),
+  };
+}
+
+function normalizeItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items.slice(0, 6).map((item) => ({
+    name: String(item.name || "未知食材"),
+    portion: String(item.portion || "约 1 份"),
+    calories: Math.max(0, Number.parseInt(item.calories, 10) || 0),
+  }));
+}
+
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item)).filter(Boolean).slice(0, 3);
+}
+
+function buildInsight(insight, calorieRange, assumptions) {
+  const base = String(insight || "图片识别结果为估算值，仅供参考。");
+  const rangeText =
+    calorieRange.min && calorieRange.max
+      ? `预估区间 ${calorieRange.min}-${calorieRange.max} kcal。`
+      : "";
+  const assumptionText = assumptions.length ? `依据：${assumptions.join("；")}。` : "";
+
+  return [base, rangeText, assumptionText].filter(Boolean).join(" ");
 }
 
 function serveStatic(req, res) {

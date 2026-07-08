@@ -467,6 +467,32 @@ h2 {
   white-space: nowrap;
 }
 
+.estimate-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.estimate-summary div {
+  min-height: 72px;
+  padding: 12px 10px;
+  display: grid;
+  align-content: space-between;
+  border-radius: 8px;
+  background: #f7f8ff;
+}
+
+.estimate-summary span {
+  color: #8f96a8;
+  font-size: 12px;
+}
+
+.estimate-summary strong {
+  color: #43485c;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
 .macro-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
