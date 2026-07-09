@@ -5,6 +5,7 @@ const path = require("node:path");
 const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || "127.0.0.1";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const LOGMEAL_BASE_URL = "https://api.logmeal.com/v2";
 const ROOT = __dirname;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const FOOD_ANALYSIS_PROMPT = [
@@ -72,11 +73,6 @@ server.listen(PORT, HOST, () => {
 });
 
 async function handleAnalyzeFood(req, res) {
-  if (!process.env.OPENAI_API_KEY) {
-    sendJson(res, 500, { error: "缺少 OPENAI_API_KEY，无法调用真实 AI 识别。" });
-    return;
-  }
-
   const body = await readJsonBody(req);
   const imageDataUrl = body.imageDataUrl;
 
@@ -90,8 +86,174 @@ async function handleAnalyzeFood(req, res) {
     return;
   }
 
+  const logMealToken = process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY;
+
+  if (logMealToken) {
+    try {
+      sendJson(res, 200, await callLogMeal(imageDataUrl, logMealToken));
+      return;
+    } catch (error) {
+      if (!process.env.OPENAI_API_KEY) {
+        throw new Error(`LogMeal 识别失败：${error.message}`);
+      }
+      console.warn(`LogMeal failed, falling back to OpenAI: ${error.message}`);
+    }
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    sendJson(res, 500, {
+      error: "缺少 LOGMEAL_API_USER_TOKEN 或 OPENAI_API_KEY，无法调用真实 AI 识别。",
+    });
+    return;
+  }
+
   const aiResult = await callOpenAI(imageDataUrl);
   sendJson(res, 200, normalizeFoodResult(aiResult));
+}
+
+async function callLogMeal(imageDataUrl, token) {
+  const image = dataUrlToBlob(imageDataUrl);
+  const form = new FormData();
+  form.append("image", image.blob, `meal.${image.extension}`);
+
+  const recognition = await logMealFetch("/image/segmentation/complete", token, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!recognition.imageId) {
+    throw new Error("没有返回 imageId。");
+  }
+
+  const nutrition = await logMealFetch("/nutrition/recipe/nutritionalInfo", token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageId: recognition.imageId }),
+  });
+
+  return normalizeLogMealResult(recognition, nutrition);
+}
+
+async function logMealFetch(pathname, token, options) {
+  const response = await fetch(`${LOGMEAL_BASE_URL}${pathname}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+  }
+
+  return payload;
+}
+
+function normalizeLogMealResult(recognition, nutrition) {
+  const total = nutrition.nutritional_info || {};
+  const totalNutrients = total.totalNutrients || {};
+  const calories = Math.round(Number(total.calories || totalNutrients.ENERC_KCAL?.quantity || 0));
+  const items = normalizeLogMealItems(recognition, nutrition);
+  const topNames = items.map((item) => item.name).filter(Boolean);
+  const confidence = calculateLogMealConfidence(recognition);
+  const servingSize = Number(nutrition.serving_size || 0);
+
+  if (!calories) {
+    throw new Error("没有返回可用的热量数据。");
+  }
+
+  return {
+    food: topNames.length ? topNames.join("、") : "识别到的餐食",
+    calories,
+    calorieRange: {
+      min: Math.round(calories * 0.85),
+      max: Math.round(calories * 1.15),
+    },
+    confidence,
+    portion: servingSize ? `约 ${Math.round(servingSize)}g` : "约 1 份",
+    protein: formatNutrient(totalNutrients.PROCNT),
+    carbs: formatNutrient(totalNutrients.CHOCDF),
+    fat: formatNutrient(totalNutrients.FAT),
+    items,
+    assumptions: [
+      "LogMeal 图像识别与营养库估算",
+      "未称重时份量可能存在误差",
+      "中餐油量和酱汁会影响实际热量",
+    ],
+    insight: "识别结果为估算值，仅供健康管理参考；中餐建议结合实际份量和用油情况校正。",
+    provider: "logmeal",
+    imageId: recognition.imageId,
+  };
+}
+
+function normalizeLogMealItems(recognition, nutrition) {
+  const namesById = new Map();
+  if (Array.isArray(nutrition.ids) && Array.isArray(nutrition.foodName)) {
+    nutrition.ids.forEach((id, index) => namesById.set(id, nutrition.foodName[index]));
+  }
+
+  const nutritionItems = Array.isArray(nutrition.nutritional_info_per_item)
+    ? nutrition.nutritional_info_per_item
+    : [];
+
+  if (nutritionItems.length) {
+    return nutritionItems.slice(0, 6).map((item) => {
+      const nutrients = item.nutritional_info || {};
+      return {
+        name: String(namesById.get(item.id) || findRecognitionName(recognition, item.food_item_position)),
+        portion: item.serving_size ? `约 ${Math.round(Number(item.serving_size))}g` : "约 1 份",
+        calories: Math.round(Number(nutrients.calories || 0)),
+      };
+    });
+  }
+
+  return (recognition.segmentation_results || []).slice(0, 6).map((item) => ({
+    name: String(findRecognitionName(recognition, item.food_item_position)),
+    portion: item.serving_size ? `约 ${Math.round(Number(item.serving_size))}g` : "约 1 份",
+    calories: 0,
+  }));
+}
+
+function findRecognitionName(recognition, position) {
+  const segment = (recognition.segmentation_results || []).find(
+    (item) => item.food_item_position === position,
+  );
+  return segment?.recognition_results?.[0]?.name || "未知食物";
+}
+
+function calculateLogMealConfidence(recognition) {
+  const probs = (recognition.segmentation_results || [])
+    .map((item) => Number(item.recognition_results?.[0]?.prob))
+    .filter(Number.isFinite);
+
+  if (!probs.length) return "80%";
+
+  const average = probs.reduce((sum, prob) => sum + prob, 0) / probs.length;
+  return `${Math.round(Math.min(1, average) * 100)}%`;
+}
+
+function formatNutrient(nutrient) {
+  const quantity = Number(nutrient?.quantity || 0);
+  const unit = nutrient?.unit || "g";
+  return `${Math.round(quantity)}${unit}`;
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(",");
+  const mime = header.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64$/)?.[1];
+
+  if (!mime || !base64) {
+    throw new Error("图片格式错误。");
+  }
+
+  const extension = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  return {
+    blob: new Blob([Buffer.from(base64, "base64")], { type: mime }),
+    extension,
+  };
 }
 
 async function callOpenAI(imageDataUrl) {
