@@ -29,6 +29,14 @@ LOGMEAL_API_USER_TOKEN=你的_LogMeal_APIUser_token node server.js
 http://127.0.0.1:4173/
 ```
 
+## Demo 运行
+
+1. 在 LogMeal 后台复制已启用 APIUser 的 token。
+2. 在本地 `.env` 填写 `LOGMEAL_API_USER_TOKEN`。
+3. 启动 `node server.js`。
+4. 手机或浏览器打开 `http://127.0.0.1:4173/`，页面顶部会显示 `LogMeal 真实识别已就绪`。
+5. 上传一张食物图片，点击 `计算卡路里`。
+
 可选：
 
 ```bash

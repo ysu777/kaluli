@@ -74,6 +74,11 @@ function loadLocalEnv() {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === "GET" && req.url === "/api/status") {
+      sendJson(res, 200, getApiStatus());
+      return;
+    }
+
     if (req.method === "POST" && req.url === "/api/analyze-food") {
       await handleAnalyzeFood(req, res);
       return;
@@ -93,6 +98,16 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Calorie Lens running at http://${HOST}:${PORT}`);
 });
+
+function getApiStatus() {
+  const hasLogMeal = Boolean(process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY);
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+
+  return {
+    ready: hasLogMeal || hasOpenAI,
+    provider: hasLogMeal ? "LogMeal" : hasOpenAI ? "OpenAI" : "none",
+  };
+}
 
 async function handleAnalyzeFood(req, res) {
   const body = await readJsonBody(req);

@@ -6,6 +6,7 @@ const resetButton = document.querySelector("#reset-button");
 const emptyState = document.querySelector("#empty-state");
 const loadingState = document.querySelector("#loading-state");
 const resultState = document.querySelector("#result-state");
+const apiStatus = document.querySelector("#api-status");
 const emptyTitle = "上传后生成热量报告";
 const emptyDescription = "结果将展示食物名称、预估热量、份量和营养结构。";
 
@@ -45,6 +46,8 @@ const results = [
 
 let currentFileName = "";
 let currentImageDataUrl = "";
+
+loadApiStatus();
 
 input.addEventListener("change", () => {
   const file = input.files?.[0];
@@ -110,6 +113,30 @@ function showState(state) {
 function selectResult(fileName) {
   const seed = Array.from(fileName).reduce((sum, char) => sum + char.charCodeAt(0), 0);
   return results[seed % results.length];
+}
+
+async function loadApiStatus() {
+  if (mockMode) {
+    setApiStatus("演示模式", true);
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/status");
+    const payload = await response.json();
+    if (payload.ready) {
+      setApiStatus(`${payload.provider} 真实识别已就绪`, true);
+    } else {
+      setApiStatus("未配置真实识别 API", false);
+    }
+  } catch {
+    setApiStatus("识别服务未连接", false);
+  }
+}
+
+function setApiStatus(text, ready) {
+  apiStatus.textContent = text;
+  apiStatus.classList.toggle("is-ready", ready);
 }
 
 async function analyzeFoodImage(imageDataUrl) {
