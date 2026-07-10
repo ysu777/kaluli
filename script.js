@@ -9,6 +9,8 @@ const resultState = document.querySelector("#result-state");
 const apiStatus = document.querySelector("#api-status");
 const emptyTitle = "上传后生成热量报告";
 const emptyDescription = "结果将展示食物名称、预估热量、份量和营养结构。";
+const maxApiImageBytes = 900 * 1024;
+const maxApiImageDimension = 1280;
 
 const mockMode = new URLSearchParams(window.location.search).has("mock");
 const results = [
@@ -49,23 +51,28 @@ let currentImageDataUrl = "";
 
 loadApiStatus();
 
-input.addEventListener("change", () => {
+input.addEventListener("change", async () => {
   const file = input.files?.[0];
   if (!file) return;
 
   currentFileName = file.name;
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    currentImageDataUrl = reader.result;
+  analyzeButton.disabled = true;
+  analyzeButton.textContent = "处理图片...";
+  restoreEmptyCopy();
+  showState("empty");
+
+  try {
+    currentImageDataUrl = await prepareImageForApi(file);
     previewImage.src = currentImageDataUrl;
     previewImage.classList.add("is-visible");
     uploadEmpty.classList.add("hidden");
     analyzeButton.disabled = false;
     analyzeButton.textContent = "计算卡路里";
-    restoreEmptyCopy();
-    showState("empty");
-  });
-  reader.readAsDataURL(file);
+  } catch (error) {
+    renderError(error);
+    analyzeButton.disabled = true;
+    analyzeButton.textContent = "计算卡路里";
+  }
 });
 
 analyzeButton.addEventListener("click", async () => {
@@ -137,6 +144,82 @@ async function loadApiStatus() {
 function setApiStatus(text, ready) {
   apiStatus.textContent = text;
   apiStatus.classList.toggle("is-ready", ready);
+}
+
+async function prepareImageForApi(file) {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("请上传图片文件。");
+  }
+
+  const image = await loadImage(file);
+  let { width, height } = scaleSize(image.width, image.height, maxApiImageDimension);
+  let quality = 0.86;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const dataUrl = await drawImageToJpegDataUrl(image, width, height, quality);
+    if (estimateDataUrlBytes(dataUrl) <= maxApiImageBytes) {
+      return dataUrl;
+    }
+
+    if (quality > 0.56) {
+      quality -= 0.1;
+    } else {
+      width = Math.round(width * 0.82);
+      height = Math.round(height * 0.82);
+      quality = 0.74;
+    }
+  }
+
+  throw new Error("图片过大，请换一张更小的图片。");
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+
+    image.addEventListener("load", () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    });
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败，请换一张图片。"));
+    });
+    image.src = url;
+  });
+}
+
+function scaleSize(width, height, maxDimension) {
+  const scale = Math.min(1, maxDimension / Math.max(width, height));
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+function drawImageToJpegDataUrl(image, width, height, quality) {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      reject(new Error("图片处理失败，请换一张图片。"));
+      return;
+    }
+
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    resolve(canvas.toDataURL("image/jpeg", quality));
+  });
+}
+
+function estimateDataUrlBytes(dataUrl) {
+  const base64 = dataUrl.split(",")[1] || "";
+  return Math.ceil((base64.length * 3) / 4);
 }
 
 async function analyzeFoodImage(imageDataUrl) {

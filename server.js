@@ -183,10 +183,20 @@ async function logMealFetch(pathname, token, options) {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+    throw new Error(formatLogMealError(payload, response.status));
   }
 
   return payload;
+}
+
+function formatLogMealError(payload, status) {
+  const message = String(payload.message || payload.error || "");
+
+  if (message.includes("too large") || message.includes("1048576")) {
+    return "图片超过 LogMeal 1MB 限制，请使用压缩后的图片重试。";
+  }
+
+  return message || `HTTP ${status}`;
 }
 
 function normalizeLogMealResult(recognition, nutrition) {
