@@ -196,6 +196,10 @@ function formatLogMealError(payload, status) {
     return "图片超过 LogMeal 1MB 限制，请使用压缩后的图片重试。";
   }
 
+  if (message.includes("confirm your APICompany email")) {
+    return "LogMeal 公司邮箱还未验证，请先到注册邮箱收件箱点击确认链接。";
+  }
+
   return message || `HTTP ${status}`;
 }
 
