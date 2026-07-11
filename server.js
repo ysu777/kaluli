@@ -10,6 +10,42 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const LOGMEAL_BASE_URL = "https://api.logmeal.com/v2";
 const ROOT = __dirname;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const FOOD_NAME_ZH = new Map([
+  ["steamed broccoli", "西兰花"],
+  ["broccoli", "西兰花"],
+  ["toasted bread", "烤吐司"],
+  ["toast", "吐司"],
+  ["white coffee", "白咖啡"],
+  ["coffee", "咖啡"],
+  ["berries", "浆果"],
+  ["strawberry", "草莓"],
+  ["blueberry", "蓝莓"],
+  ["sausage", "香肠"],
+  ["fried egg", "煎蛋"],
+  ["egg", "鸡蛋"],
+  ["rice", "米饭"],
+  ["white rice", "白米饭"],
+  ["fried rice", "炒饭"],
+  ["noodles", "面条"],
+  ["soup", "汤"],
+  ["salad", "沙拉"],
+  ["chicken", "鸡肉"],
+  ["beef", "牛肉"],
+  ["pork", "猪肉"],
+  ["fish", "鱼肉"],
+  ["shrimp", "虾"],
+  ["tofu", "豆腐"],
+  ["potato", "土豆"],
+  ["tomato", "番茄"],
+  ["cucumber", "黄瓜"],
+  ["carrot", "胡萝卜"],
+  ["corn", "玉米"],
+  ["milk", "牛奶"],
+  ["bread", "面包"],
+  ["pasta", "意面"],
+  ["pizza", "披萨"],
+  ["hamburger", "汉堡"],
+]);
 const FOOD_ANALYSIS_PROMPT = [
   "你是面向中国用户的营养师和食物图像识别助手。",
   "任务：根据用户上传的食物图片，识别食物，估算总卡路里、份量和三大营养素。",
@@ -127,7 +163,7 @@ async function handleAnalyzeFood(req, res) {
 
   if (logMealToken) {
     try {
-      sendJson(res, 200, await callLogMeal(imageDataUrl, logMealToken));
+      sendJson(res, 200, await analyzeWithLogMeal(imageDataUrl, logMealToken));
       return;
     } catch (error) {
       if (!process.env.OPENAI_API_KEY) {
@@ -146,6 +182,26 @@ async function handleAnalyzeFood(req, res) {
 
   const aiResult = await callOpenAI(imageDataUrl);
   sendJson(res, 200, normalizeFoodResult(aiResult));
+}
+
+async function analyzeWithLogMeal(imageDataUrl, token) {
+  const result = await callLogMeal(imageDataUrl, token);
+
+  if (!shouldReviewLogMealResult()) {
+    return result;
+  }
+
+  try {
+    const review = await callOpenAIReview(imageDataUrl, result);
+    return {
+      ...normalizeFoodResult(review),
+      provider: "logmeal+openai",
+      imageId: result.imageId,
+    };
+  } catch (error) {
+    console.warn(`OpenAI review failed, using LogMeal result: ${error.message}`);
+    return result;
+  }
 }
 
 async function callLogMeal(imageDataUrl, token) {
@@ -253,8 +309,9 @@ function normalizeLogMealItems(recognition, nutrition) {
   if (nutritionItems.length) {
     return nutritionItems.slice(0, 6).map((item) => {
       const nutrients = item.nutritional_info || {};
+      const name = namesById.get(item.id) || findRecognitionName(recognition, item.food_item_position);
       return {
-        name: String(namesById.get(item.id) || findRecognitionName(recognition, item.food_item_position)),
+        name: localizeFoodName(name),
         portion: item.serving_size ? `约 ${Math.round(Number(item.serving_size))}g` : "约 1 份",
         calories: Math.round(Number(nutrients.calories || 0)),
       };
@@ -262,10 +319,17 @@ function normalizeLogMealItems(recognition, nutrition) {
   }
 
   return (recognition.segmentation_results || []).slice(0, 6).map((item) => ({
-    name: String(findRecognitionName(recognition, item.food_item_position)),
+    name: localizeFoodName(findRecognitionName(recognition, item.food_item_position)),
     portion: item.serving_size ? `约 ${Math.round(Number(item.serving_size))}g` : "约 1 份",
     calories: 0,
   }));
+}
+
+function localizeFoodName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "未知食物";
+  if (/[\u4e00-\u9fa5]/.test(raw)) return raw;
+  return FOOD_NAME_ZH.get(raw.toLowerCase()) || raw;
 }
 
 function findRecognitionName(recognition, position) {
@@ -342,6 +406,55 @@ async function callOpenAI(imageDataUrl) {
   }
 
   return parseJsonFromText(extractOutputText(payload));
+}
+
+async function callOpenAIReview(imageDataUrl, logMealResult) {
+  const prompt = [
+    "请基于用户食物图片和 LogMeal 初步识别结果，输出更适合中国用户阅读的营养估算 JSON。",
+    "重点：把英文食物名改成自然中文；如果图片明显是中餐，请按中餐菜名表达；不要伪造精确重量。",
+    "除非图片明显不匹配，否则热量和营养素应参考 LogMeal 数值，只做合理小幅修正。",
+    "只返回 JSON，字段必须与下面的 LogMeal JSON 兼容。",
+    JSON.stringify(logMealResult),
+  ].join("\n");
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt,
+            },
+            {
+              type: "input_image",
+              image_url: imageDataUrl,
+              detail: "high",
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error?.message || "OpenAI 复核调用失败。");
+  }
+
+  return parseJsonFromText(extractOutputText(payload));
+}
+
+function shouldReviewLogMealResult() {
+  return process.env.OPENAI_API_KEY && process.env.OPENAI_REVIEW_LOGMEAL === "true";
 }
 
 function extractOutputText(payload) {

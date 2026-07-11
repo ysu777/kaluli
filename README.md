@@ -15,6 +15,7 @@ cp .env.example .env
 ```bash
 LOGMEAL_API_USER_TOKEN=你的_LogMeal_APIUser_token
 OPENAI_API_KEY=你的_OpenAI_API_Key
+OPENAI_REVIEW_LOGMEAL=false
 ```
 
 启动服务：
@@ -47,8 +48,10 @@ LOGMEAL_API_USER_TOKEN=你的_LogMeal_APIUser_token OPENAI_API_KEY=你的_OpenAI
 
 - 真实识别通过 `POST /api/analyze-food` 完成。
 - LogMeal 使用 `POST /v2/image/segmentation/complete` 识别图片，再用 `POST /v2/nutrition/recipe/nutritionalInfo` 获取热量和营养信息。
+- LogMeal 英文识别名会先做本地中文化映射，便于给中国用户演示。
 - API Key 只放在服务端环境变量或本地 `.env`，不写入 H5 前端，不提交 GitHub。
 - 无 Key 时会提示缺少 `LOGMEAL_API_USER_TOKEN` 或 `OPENAI_API_KEY`。
 - 临时演示模拟结果可访问 `/?mock`。
 - OpenAI 兜底提示词已针对中国饮食优化，会优先考虑米饭、面条、炒菜、盖饭、火锅、麻辣烫、烧烤、卤味、汤粉面等场景。
+- 如果需要让 OpenAI 对 LogMeal 的结果做中文菜名和中餐语义复核，可在本地 `.env` 设置 `OPENAI_REVIEW_LOGMEAL=true`；默认关闭，避免额外调用成本。
 - 结果会返回热量区间、识别到的食材拆分和估算假设。图片识别不能替代称重，尤其是中餐油量、酱汁和隐藏食材会带来误差。
