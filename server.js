@@ -11,8 +11,17 @@ const LOGMEAL_BASE_URL = "https://api.logmeal.com/v2";
 const ROOT = __dirname;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const FOOD_NAME_ZH = new Map([
+  ["white fish with lemon", "柠檬白鱼"],
+  ["catalan spinach", "加泰罗尼亚菠菜"],
+  ["meat gravy sauce", "肉汁酱"],
+  ["baked potatoes", "烤土豆"],
+  ["sesame seeds", "芝麻"],
+  ["sesame seed", "芝麻"],
+  ["noodles with wonton", "云吞面"],
+  ["noodle soup", "汤面"],
   ["steamed broccoli", "西兰花"],
   ["broccoli", "西兰花"],
+  ["broccoli with shrimp", "西兰花炒虾仁"],
   ["toasted bread", "烤吐司"],
   ["toast", "吐司"],
   ["white coffee", "白咖啡"],
@@ -23,22 +32,43 @@ const FOOD_NAME_ZH = new Map([
   ["sausage", "香肠"],
   ["fried egg", "煎蛋"],
   ["egg", "鸡蛋"],
+  ["scrambled eggs", "炒蛋"],
+  ["boiled egg", "水煮蛋"],
   ["rice", "米饭"],
   ["white rice", "白米饭"],
+  ["brown rice", "糙米饭"],
+  ["purple rice", "紫米饭"],
   ["fried rice", "炒饭"],
+  ["rice noodles", "米粉"],
   ["noodles", "面条"],
+  ["wonton", "云吞"],
+  ["dumplings", "饺子"],
   ["soup", "汤"],
   ["salad", "沙拉"],
   ["chicken", "鸡肉"],
+  ["chicken breast", "鸡胸肉"],
   ["beef", "牛肉"],
   ["pork", "猪肉"],
+  ["meat", "肉类"],
   ["fish", "鱼肉"],
+  ["white fish", "白鱼"],
   ["shrimp", "虾"],
+  ["prawn", "虾"],
+  ["prawns", "虾"],
+  ["crab", "螃蟹"],
   ["tofu", "豆腐"],
   ["potato", "土豆"],
+  ["pumpkin", "南瓜"],
+  ["sweet potato", "红薯"],
   ["tomato", "番茄"],
   ["cucumber", "黄瓜"],
   ["carrot", "胡萝卜"],
+  ["spinach", "菠菜"],
+  ["bean sprouts", "豆芽"],
+  ["green beans", "四季豆"],
+  ["lettuce", "生菜"],
+  ["cabbage", "卷心菜"],
+  ["mushroom", "蘑菇"],
   ["corn", "玉米"],
   ["milk", "牛奶"],
   ["bread", "面包"],
@@ -329,7 +359,24 @@ function localizeFoodName(name) {
   const raw = String(name || "").trim();
   if (!raw) return "未知食物";
   if (/[\u4e00-\u9fa5]/.test(raw)) return raw;
-  return FOOD_NAME_ZH.get(raw.toLowerCase()) || raw;
+  if (raw.includes(",")) {
+    return raw
+      .split(",")
+      .map((item) => localizeFoodName(item))
+      .filter(Boolean)
+      .join("、");
+  }
+
+  const lookupName = normalizeLookupName(raw);
+  return FOOD_NAME_ZH.get(lookupName) || "其他食物";
+}
+
+function normalizeLookupName(name) {
+  return String(name)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function findRecognitionName(recognition, position) {
