@@ -11,10 +11,26 @@ const LOGMEAL_BASE_URL = "https://api.logmeal.com/v2";
 const ROOT = __dirname;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const FOOD_NAME_ZH = new Map([
+  ["steak", "牛排"],
+  ["beef steak", "牛排"],
+  ["grilled steak", "烤牛排"],
+  ["grilled beef", "烤牛肉"],
+  ["roast beef", "烤牛肉"],
+  ["beef salad", "牛肉沙拉"],
+  ["beef steak salad", "牛排沙拉"],
   ["white fish with lemon", "柠檬白鱼"],
   ["catalan spinach", "加泰罗尼亚菠菜"],
   ["meat gravy sauce", "肉汁酱"],
+  ["gravy sauce", "肉汁酱"],
+  ["salad dressing", "沙拉酱"],
+  ["sauce", "酱汁"],
   ["baked potatoes", "烤土豆"],
+  ["peas", "豌豆"],
+  ["green peas", "豌豆"],
+  ["olives", "橄榄"],
+  ["olive", "橄榄"],
+  ["cherry tomatoes", "小番茄"],
+  ["cherry tomato", "小番茄"],
   ["sesame seeds", "芝麻"],
   ["sesame seed", "芝麻"],
   ["noodles with wonton", "云吞面"],
@@ -26,6 +42,8 @@ const FOOD_NAME_ZH = new Map([
   ["toast", "吐司"],
   ["white coffee", "白咖啡"],
   ["coffee", "咖啡"],
+  ["iced coffee", "冰咖啡"],
+  ["latte", "拿铁"],
   ["berries", "浆果"],
   ["strawberry", "草莓"],
   ["blueberry", "蓝莓"],
@@ -76,6 +94,31 @@ const FOOD_NAME_ZH = new Map([
   ["pizza", "披萨"],
   ["hamburger", "汉堡"],
 ]);
+const FOOD_NAME_KEYWORDS = [
+  ["steak", "牛排"],
+  ["gravy", "肉汁酱"],
+  ["sauce", "酱汁"],
+  ["salad", "沙拉"],
+  ["coffee", "咖啡"],
+  ["latte", "拿铁"],
+  ["beef", "牛肉"],
+  ["chicken", "鸡肉"],
+  ["pork", "猪肉"],
+  ["fish", "鱼肉"],
+  ["shrimp", "虾"],
+  ["prawn", "虾"],
+  ["crab", "螃蟹"],
+  ["broccoli", "西兰花"],
+  ["potato", "土豆"],
+  ["tomato", "番茄"],
+  ["pea", "豌豆"],
+  ["mushroom", "蘑菇"],
+  ["rice", "米饭"],
+  ["noodle", "面条"],
+  ["wonton", "云吞"],
+  ["egg", "鸡蛋"],
+  ["bread", "面包"],
+];
 const FOOD_ANALYSIS_PROMPT = [
   "你是面向中国用户的营养师和食物图像识别助手。",
   "任务：根据用户上传的食物图片，识别食物，估算总卡路里、份量和三大营养素。",
@@ -294,7 +337,7 @@ function normalizeLogMealResult(recognition, nutrition) {
   const totalNutrients = total.totalNutrients || {};
   const calories = Math.round(Number(total.calories || totalNutrients.ENERC_KCAL?.quantity || 0));
   const items = normalizeLogMealItems(recognition, nutrition);
-  const topNames = items.map((item) => item.name).filter(Boolean);
+  const topNames = uniqueNames(items.map((item) => item.name).filter(Boolean));
   const confidence = calculateLogMealConfidence(recognition);
   const servingSize = Number(nutrition.serving_size || 0);
 
@@ -337,7 +380,7 @@ function normalizeLogMealItems(recognition, nutrition) {
     : [];
 
   if (nutritionItems.length) {
-    return nutritionItems.slice(0, 6).map((item) => {
+    const items = nutritionItems.slice(0, 6).map((item) => {
       const nutrients = item.nutritional_info || {};
       const name = namesById.get(item.id) || findRecognitionName(recognition, item.food_item_position);
       return {
@@ -346,13 +389,15 @@ function normalizeLogMealItems(recognition, nutrition) {
         calories: Math.round(Number(nutrients.calories || 0)),
       };
     });
+    return dedupeFoodItems(items.filter((item) => item.name));
   }
 
-  return (recognition.segmentation_results || []).slice(0, 6).map((item) => ({
+  const items = (recognition.segmentation_results || []).slice(0, 6).map((item) => ({
     name: localizeFoodName(findRecognitionName(recognition, item.food_item_position)),
     portion: item.serving_size ? `约 ${Math.round(Number(item.serving_size))}g` : "约 1 份",
     calories: 0,
   }));
+  return dedupeFoodItems(items.filter((item) => item.name));
 }
 
 function localizeFoodName(name) {
@@ -368,7 +413,11 @@ function localizeFoodName(name) {
   }
 
   const lookupName = normalizeLookupName(raw);
-  return FOOD_NAME_ZH.get(lookupName) || "其他食物";
+  const exactName = FOOD_NAME_ZH.get(lookupName);
+  if (exactName) return exactName;
+
+  const keyword = FOOD_NAME_KEYWORDS.find(([key]) => lookupName.includes(key));
+  return keyword?.[1] || "";
 }
 
 function normalizeLookupName(name) {
@@ -377,6 +426,19 @@ function normalizeLookupName(name) {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function uniqueNames(names) {
+  return Array.from(new Set(names));
+}
+
+function dedupeFoodItems(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (seen.has(item.name)) return false;
+    seen.add(item.name);
+    return true;
+  });
 }
 
 function findRecognitionName(recognition, position) {
