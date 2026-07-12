@@ -456,6 +456,24 @@ h2 {
   font-weight: 800;
 }
 
+.result-badges {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.provider-badge {
+  min-width: 60px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #3e6e6d;
+  background: rgba(216, 248, 241, 0.86);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .confidence {
   min-width: 60px;
   padding: 8px 10px;

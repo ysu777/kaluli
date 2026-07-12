@@ -125,13 +125,15 @@ const NUTRITION_PROFILES = [
   { keywords: ["面包", "吐司", "馒头", "包子", "饼"], category: "staple", kcal: 250, protein: 8, carbs: 48, fat: 3 },
   { keywords: ["牛排", "牛肉", "羊肉"], category: "meat", kcal: 250, protein: 26, carbs: 0, fat: 16 },
   { keywords: ["鸡肉", "鸡胸", "鸡腿", "鸭肉"], category: "meat", kcal: 190, protein: 24, carbs: 0, fat: 10 },
-  { keywords: ["猪肉", "排骨", "五花肉", "肉"], category: "meat", kcal: 285, protein: 18, carbs: 0, fat: 23 },
+  { keywords: ["猪肝", "肝"], category: "meat", kcal: 135, protein: 20, carbs: 4, fat: 4 },
+  { keywords: ["猪肉", "排骨", "五花肉", "肉片", "肉"], category: "meat", kcal: 285, protein: 18, carbs: 0, fat: 23 },
   { keywords: ["鱼", "虾", "蟹", "海鲜"], category: "seafood", kcal: 120, protein: 20, carbs: 0, fat: 4 },
   { keywords: ["鸡蛋", "蛋"], category: "egg", kcal: 155, protein: 13, carbs: 1.1, fat: 11 },
   { keywords: ["豆腐", "豆制品"], category: "protein", kcal: 85, protein: 8, carbs: 2, fat: 5 },
   { keywords: ["西兰花", "青菜", "蔬菜", "生菜", "菠菜", "番茄", "黄瓜", "胡萝卜", "豆芽", "蘑菇", "豌豆"], category: "vegetable", kcal: 35, protein: 2, carbs: 6, fat: 0.3 },
   { keywords: ["土豆", "红薯", "南瓜", "玉米"], category: "starchyVegetable", kcal: 90, protein: 2, carbs: 20, fat: 0.2 },
   { keywords: ["酱汁", "肉汁酱", "沙拉酱", "蘸料", "调料"], category: "sauce", kcal: 180, protein: 2, carbs: 16, fat: 12 },
+  { keywords: ["汤", "排骨汤", "玉米排骨汤", "炖汤"], category: "soup", kcal: 45, protein: 3, carbs: 4, fat: 2 },
   { keywords: ["油", "辣油", "红油"], category: "oil", kcal: 884, protein: 0, carbs: 0, fat: 100 },
   { keywords: ["咖啡", "拿铁", "奶茶", "饮料"], category: "drink", kcal: 60, protein: 1, carbs: 8, fat: 2 },
   { keywords: ["水果", "浆果", "草莓", "蓝莓", "苹果", "香蕉"], category: "fruit", kcal: 55, protein: 0.8, carbs: 13, fat: 0.2 },
@@ -145,6 +147,7 @@ const CATEGORY_DEFAULTS = {
   vegetable: { kcal: 35, protein: 2, carbs: 6, fat: 0.3, grams: 100 },
   starchyVegetable: { kcal: 90, protein: 2, carbs: 20, fat: 0.2, grams: 100 },
   sauce: { kcal: 180, protein: 2, carbs: 16, fat: 12, grams: 30 },
+  soup: { kcal: 45, protein: 3, carbs: 4, fat: 2, grams: 250 },
   oil: { kcal: 884, protein: 0, carbs: 0, fat: 100, grams: 10 },
   drink: { kcal: 60, protein: 1, carbs: 8, fat: 2, grams: 250 },
   fruit: { kcal: 55, protein: 0.8, carbs: 13, fat: 0.2, grams: 100 },
@@ -152,15 +155,18 @@ const CATEGORY_DEFAULTS = {
 };
 const FOOD_ANALYSIS_PROMPT = [
   "你是面向中国用户的营养师和食物图像识别助手。",
-  "任务：根据用户上传的食物图片，识别食物、拆分食材、估算每项克数。热量会由后端营养表计算，所以不要自由发挥精确热量。",
+  "任务：根据用户上传的食物图片，优先按一盘/一碗菜逐项识别中文菜名，再估算每道菜可食部分克数。热量会由后端营养表计算，所以不要自由发挥精确热量。",
   "优先考虑中国饮食场景：米饭、面条、粉、粥、馒头、包子、饺子、炒菜、盖饭、麻辣烫、火锅、烧烤、卤味、汤粉面、地方小吃。",
   "估算规则：",
-  "1. 先识别可见食材、主食、肉类、蔬菜、酱汁和油炸/煎炒/炖煮等烹饪方式。",
-  "2. 无法看出重量时，按常见餐盘份量估算，并在 assumptions 里说明。",
-  "3. 中餐油、糖、酱汁差异大时，给出保守范围，不要伪装成精确称重。",
-  "4. 混合菜、盖饭、火锅、麻辣烫、汤粉面必须考虑汤底/酱汁/油量不确定性。",
-  "5. 如果图片不是食物或无法识别，isFood=false，并给出原因。",
-  "6. items.category 只能使用：staple, meat, seafood, egg, protein, vegetable, starchyVegetable, sauce, oil, drink, fruit, other。",
+  "1. 多盘菜照片必须把每个明显盘子/碗作为一个 items 项，不要只返回虾、青菜、米饭这类单个食材。",
+  "2. food 字段用 2-6 个中文菜名概括整餐，例如：清炒青菜、土豆胡萝卜炒肉、油焖大虾、炒肉片、玉米排骨汤。",
+  "3. 只有清楚看到面条/粉条时，才可以识别为汤面/粉；只看到汤锅时应识别为汤或炖汤，不要猜成汤面。",
+  "4. 看不清具体肉类时用保守中文菜名，比如炒肉片、炒猪肝、炖肉汤，不要省略这道菜。",
+  "5. 忽略水印、文字贴纸、桌布和餐具，不要把它们当成食物。",
+  "6. 无法看出重量时，按常见餐盘份量估算，并在 assumptions 里说明。",
+  "7. 中餐油、糖、酱汁差异大时，给出保守范围，不要伪装成精确称重。",
+  "8. 如果图片不是食物或无法识别，isFood=false，并给出原因。",
+  "9. items.category 只能使用：staple, meat, seafood, egg, protein, vegetable, starchyVegetable, sauce, oil, soup, drink, fruit, other。",
   "只返回 JSON，不要 Markdown，不要解释文字。",
   "JSON 字段必须是：",
   "{",
@@ -174,8 +180,9 @@ const FOOD_ANALYSIS_PROMPT = [
   "  \"carbs\": \"52g\",",
   "  \"fat\": \"29g\",",
   "  \"items\": [",
-  "    {\"name\": \"米饭\", \"category\": \"staple\", \"estimatedGrams\": 150, \"portion\": \"约 150g\", \"cookingMethod\": \"蒸\"},",
-  "    {\"name\": \"番茄炒蛋\", \"category\": \"egg\", \"estimatedGrams\": 220, \"portion\": \"约 220g\", \"cookingMethod\": \"炒\"}",
+  "    {\"name\": \"清炒青菜\", \"category\": \"vegetable\", \"estimatedGrams\": 180, \"portion\": \"约 180g\", \"cookingMethod\": \"炒\"},",
+  "    {\"name\": \"土豆胡萝卜炒肉\", \"category\": \"meat\", \"estimatedGrams\": 220, \"portion\": \"约 220g\", \"cookingMethod\": \"炒\"},",
+  "    {\"name\": \"玉米排骨汤\", \"category\": \"soup\", \"estimatedGrams\": 280, \"portion\": \"约 280g\", \"cookingMethod\": \"炖\"}",
   "  ],",
   "  \"adjustments\": {\"mealSize\": \"standard\", \"stapleAmount\": \"auto\", \"meatAmount\": \"standard\", \"sauceAmount\": \"standard\"},",
   "  \"assumptions\": [\"按普通家常炒菜油量估算\", \"图片无法确认实际重量\"],",
@@ -597,7 +604,7 @@ function normalizeOpenAIFoodResult(result) {
   const insight = buildInsight(result.insight, calorieRange, assumptions);
 
   return {
-    food: String(result.food || items.slice(0, 3).map((item) => item.name).join("、") || "识别到的餐食"),
+    food: buildOpenAIFoodTitle(result.food, items),
     calories,
     calorieRange,
     confidence: String(result.confidence || "中"),
@@ -656,6 +663,14 @@ function normalizeOpenAIItems(items) {
     .filter(Boolean);
 }
 
+function buildOpenAIFoodTitle(food, items) {
+  const itemNames = items.map((item) => item.name).filter(Boolean);
+  const titleFromItems = uniqueNames(itemNames).slice(0, 6).join("、");
+
+  if (titleFromItems) return titleFromItems;
+  return String(food || "识别到的餐食");
+}
+
 function findNutritionProfile(name, category) {
   const normalizedName = String(name).toLowerCase();
   const profile = NUTRITION_PROFILES.find((item) =>
@@ -680,6 +695,8 @@ function normalizeFoodCategory(category) {
     酱汁: "sauce",
     调料: "sauce",
     油脂: "oil",
+    汤: "soup",
+    炖汤: "soup",
     饮料: "drink",
     水果: "fruit",
   };

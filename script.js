@@ -315,6 +315,7 @@ async function analyzeFoodImage(imageDataUrl) {
 function renderResult(result) {
   document.querySelector("#calories").textContent = result.calories;
   document.querySelector("#confidence").textContent = result.confidence;
+  document.querySelector("#provider-badge").textContent = formatProvider(result.provider);
   document.querySelector("#food-name").textContent = result.food;
   document.querySelector("#portion").textContent = result.portion;
   document.querySelector("#calorie-range").textContent = formatCalorieRange(result);
@@ -323,6 +324,13 @@ function renderResult(result) {
   document.querySelector("#carbs").textContent = result.carbs;
   document.querySelector("#fat").textContent = result.fat;
   document.querySelector("#insight").textContent = result.insight;
+}
+
+function formatProvider(provider) {
+  if (provider === "openai+nutrition") return "OpenAI";
+  if (provider === "openai") return "OpenAI";
+  if (provider === "logmeal") return "LogMeal 兜底";
+  return "AI";
 }
 
 function normalizeBaseResult(result) {
