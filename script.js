@@ -7,10 +7,48 @@ const emptyState = document.querySelector("#empty-state");
 const loadingState = document.querySelector("#loading-state");
 const resultState = document.querySelector("#result-state");
 const apiStatus = document.querySelector("#api-status");
+const adjustButtons = document.querySelectorAll("[data-adjust]");
+const manualGramsInput = document.querySelector("#manual-grams");
 const emptyTitle = "上传后生成热量报告";
 const emptyDescription = "结果将展示食物名称、预估热量、份量和营养结构。";
 const maxApiImageBytes = 900 * 1024;
 const maxApiImageDimension = 1280;
+const defaultAdjustments = {
+  mealSize: "standard",
+  stapleAmount: "auto",
+  meatAmount: "standard",
+  sauceAmount: "standard",
+  manualGrams: "",
+};
+const mealSizeFactors = {
+  small: 0.85,
+  standard: 1,
+  large: 1.15,
+};
+const amountFactors = {
+  small: 0.75,
+  standard: 1,
+  large: 1.25,
+};
+const sauceFactors = {
+  small: 0.6,
+  standard: 1,
+  large: 1.6,
+};
+const stapleGrams = {
+  none: 0,
+  half: 75,
+  one: 150,
+  two: 300,
+};
+const riceNutrition = {
+  name: "米饭",
+  category: "staple",
+  kcalPer100g: 116,
+  proteinPer100g: 2.6,
+  carbsPer100g: 25.9,
+  fatPer100g: 0.3,
+};
 
 const mockMode = new URLSearchParams(window.location.search).has("mock");
 const results = [
@@ -48,6 +86,8 @@ const results = [
 
 let currentFileName = "";
 let currentImageDataUrl = "";
+let baseResult = null;
+let currentAdjustments = { ...defaultAdjustments };
 
 loadApiStatus();
 
@@ -86,6 +126,9 @@ analyzeButton.addEventListener("click", async () => {
     const result = mockMode
       ? selectResult(currentFileName)
       : await analyzeFoodImage(currentImageDataUrl);
+    baseResult = normalizeBaseResult(result);
+    currentAdjustments = { ...defaultAdjustments, ...(baseResult.adjustments || {}) };
+    syncAdjustmentButtons();
     renderResult(result);
     showState("result");
     analyzeButton.disabled = false;
@@ -102,6 +145,9 @@ resetButton.addEventListener("click", () => {
   input.value = "";
   currentFileName = "";
   currentImageDataUrl = "";
+  baseResult = null;
+  currentAdjustments = { ...defaultAdjustments };
+  syncAdjustmentButtons();
   previewImage.removeAttribute("src");
   previewImage.classList.remove("is-visible");
   uploadEmpty.classList.remove("hidden");
@@ -109,6 +155,31 @@ resetButton.addEventListener("click", () => {
   analyzeButton.textContent = "计算卡路里";
   restoreEmptyCopy();
   showState("empty");
+});
+
+adjustButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    if (!baseResult) return;
+
+    const key = button.dataset.adjust;
+    const value = button.dataset.value;
+    currentAdjustments = {
+      ...currentAdjustments,
+      [key]: value,
+    };
+    syncAdjustmentButtons();
+    renderResult(calculateAdjustedResult(baseResult, currentAdjustments));
+  });
+});
+
+manualGramsInput.addEventListener("input", () => {
+  if (!baseResult) return;
+
+  currentAdjustments = {
+    ...currentAdjustments,
+    manualGrams: manualGramsInput.value,
+  };
+  renderResult(calculateAdjustedResult(baseResult, currentAdjustments));
 });
 
 function showState(state) {
@@ -252,6 +323,157 @@ function renderResult(result) {
   document.querySelector("#carbs").textContent = result.carbs;
   document.querySelector("#fat").textContent = result.fat;
   document.querySelector("#insight").textContent = result.insight;
+}
+
+function normalizeBaseResult(result) {
+  return {
+    ...result,
+    items: Array.isArray(result.items) ? result.items : [],
+    adjustments: {
+      ...defaultAdjustments,
+      ...(result.adjustments || {}),
+    },
+  };
+}
+
+function calculateAdjustedResult(result, adjustments) {
+  if (!Array.isArray(result.items) || !result.items.length) {
+    return result;
+  }
+
+  const items = buildAdjustedItems(result.items, adjustments);
+  const calories = Math.round(items.reduce((sum, item) => sum + item.calories, 0));
+  const totalGrams = Math.round(items.reduce((sum, item) => sum + (item.estimatedGrams || 0), 0));
+  const protein = items.reduce((sum, item) => sum + (item.proteinGrams || 0), 0);
+  const carbs = items.reduce((sum, item) => sum + (item.carbsGrams || 0), 0);
+  const fat = items.reduce((sum, item) => sum + (item.fatGrams || 0), 0);
+
+  return {
+    ...result,
+    calories,
+    calorieRange: {
+      min: Math.round(calories * 0.85),
+      max: Math.round(calories * 1.2),
+    },
+    portion: totalGrams ? `约 ${totalGrams}g` : result.portion,
+    protein: `${Math.round(protein)}g`,
+    carbs: `${Math.round(carbs)}g`,
+    fat: `${Math.round(fat)}g`,
+    items,
+    adjustments,
+    insight: buildAdjustedInsight(result.insight, adjustments),
+  };
+}
+
+function buildAdjustedItems(items, adjustments) {
+  const mealFactor = mealSizeFactors[adjustments.mealSize] || 1;
+  const adjustedItems = items.map((item) => adjustItem(item, adjustments, mealFactor));
+  const stapleIndex = adjustedItems.findIndex((item) => item.category === "staple");
+
+  if (adjustments.stapleAmount && adjustments.stapleAmount !== "auto") {
+    const grams = stapleGrams[adjustments.stapleAmount] ?? null;
+    if (grams !== null && stapleIndex >= 0) {
+      adjustedItems[stapleIndex] = calculateItemNutrition({
+        ...adjustedItems[stapleIndex],
+        estimatedGrams: grams,
+        portion: grams ? `约 ${grams}g` : "无主食",
+      });
+    } else if (grams > 0) {
+      adjustedItems.push(calculateItemNutrition({ ...riceNutrition, estimatedGrams: grams, portion: `约 ${grams}g` }));
+    }
+  }
+
+  return scaleItemsToManualGrams(
+    adjustedItems.filter((item) => item.estimatedGrams > 0 || item.calories > 0),
+    adjustments.manualGrams,
+  );
+}
+
+function adjustItem(item, adjustments, mealFactor) {
+  const factor = mealFactor * getCategoryFactor(item.category, adjustments);
+  return calculateItemNutrition({
+    ...item,
+    estimatedGrams: Math.round((item.estimatedGrams || parseGrams(item.portion) || 0) * factor),
+  });
+}
+
+function getCategoryFactor(category, adjustments) {
+  if (["meat", "seafood", "egg", "protein"].includes(category)) {
+    return amountFactors[adjustments.meatAmount] || 1;
+  }
+
+  if (["sauce", "oil"].includes(category)) {
+    return sauceFactors[adjustments.sauceAmount] || 1;
+  }
+
+  return 1;
+}
+
+function calculateItemNutrition(item) {
+  const grams = Math.max(0, Number(item.estimatedGrams) || 0);
+  const originalGrams = parseGrams(item.portion) || grams || 1;
+  const kcalPer100g = Number(item.kcalPer100g) || 0;
+  const proteinPer100g = Number(item.proteinPer100g) || 0;
+  const carbsPer100g = Number(item.carbsPer100g) || 0;
+  const fatPer100g = Number(item.fatPer100g) || 0;
+  const baseCalories = Number(item.calories) || 0;
+  const calories = kcalPer100g
+    ? Math.round((grams * kcalPer100g) / 100)
+    : Math.round(baseCalories * (grams / originalGrams));
+
+  return {
+    ...item,
+    estimatedGrams: Math.round(grams),
+    portion: grams ? `约 ${Math.round(grams)}g` : item.portion,
+    calories,
+    proteinGrams: roundMacro((grams * proteinPer100g) / 100),
+    carbsGrams: roundMacro((grams * carbsPer100g) / 100),
+    fatGrams: roundMacro((grams * fatPer100g) / 100),
+  };
+}
+
+function parseGrams(text) {
+  const match = String(text || "").match(/(\d+(?:\.\d+)?)\s*g/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function roundMacro(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function syncAdjustmentButtons() {
+  adjustButtons.forEach((button) => {
+    button.classList.toggle(
+      "active",
+      currentAdjustments[button.dataset.adjust] === button.dataset.value,
+    );
+  });
+  manualGramsInput.value = currentAdjustments.manualGrams || "";
+}
+
+function buildAdjustedInsight(insight, adjustments) {
+  const changed = Object.entries(adjustments).some(
+    ([key, value]) => defaultAdjustments[key] !== value,
+  );
+  if (!changed) return insight;
+  return `${insight} 已按你选择的份量重新估算。`;
+}
+
+function scaleItemsToManualGrams(items, manualGrams) {
+  const targetGrams = Number(manualGrams);
+  const currentGrams = items.reduce((sum, item) => sum + (item.estimatedGrams || 0), 0);
+
+  if (!Number.isFinite(targetGrams) || targetGrams <= 0 || !currentGrams) {
+    return items;
+  }
+
+  const factor = targetGrams / currentGrams;
+  return items.map((item) =>
+    calculateItemNutrition({
+      ...item,
+      estimatedGrams: Math.round(item.estimatedGrams * factor),
+    }),
+  );
 }
 
 function renderError(error) {

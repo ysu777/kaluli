@@ -119,9 +119,40 @@ const FOOD_NAME_KEYWORDS = [
   ["egg", "鸡蛋"],
   ["bread", "面包"],
 ];
+const NUTRITION_PROFILES = [
+  { keywords: ["米饭", "白米饭", "紫米饭", "糙米饭", "饭"], category: "staple", kcal: 116, protein: 2.6, carbs: 25.9, fat: 0.3 },
+  { keywords: ["面条", "米粉", "河粉", "意面", "粉"], category: "staple", kcal: 138, protein: 4.5, carbs: 25, fat: 2 },
+  { keywords: ["面包", "吐司", "馒头", "包子", "饼"], category: "staple", kcal: 250, protein: 8, carbs: 48, fat: 3 },
+  { keywords: ["牛排", "牛肉", "羊肉"], category: "meat", kcal: 250, protein: 26, carbs: 0, fat: 16 },
+  { keywords: ["鸡肉", "鸡胸", "鸡腿", "鸭肉"], category: "meat", kcal: 190, protein: 24, carbs: 0, fat: 10 },
+  { keywords: ["猪肉", "排骨", "五花肉", "肉"], category: "meat", kcal: 285, protein: 18, carbs: 0, fat: 23 },
+  { keywords: ["鱼", "虾", "蟹", "海鲜"], category: "seafood", kcal: 120, protein: 20, carbs: 0, fat: 4 },
+  { keywords: ["鸡蛋", "蛋"], category: "egg", kcal: 155, protein: 13, carbs: 1.1, fat: 11 },
+  { keywords: ["豆腐", "豆制品"], category: "protein", kcal: 85, protein: 8, carbs: 2, fat: 5 },
+  { keywords: ["西兰花", "青菜", "蔬菜", "生菜", "菠菜", "番茄", "黄瓜", "胡萝卜", "豆芽", "蘑菇", "豌豆"], category: "vegetable", kcal: 35, protein: 2, carbs: 6, fat: 0.3 },
+  { keywords: ["土豆", "红薯", "南瓜", "玉米"], category: "starchyVegetable", kcal: 90, protein: 2, carbs: 20, fat: 0.2 },
+  { keywords: ["酱汁", "肉汁酱", "沙拉酱", "蘸料", "调料"], category: "sauce", kcal: 180, protein: 2, carbs: 16, fat: 12 },
+  { keywords: ["油", "辣油", "红油"], category: "oil", kcal: 884, protein: 0, carbs: 0, fat: 100 },
+  { keywords: ["咖啡", "拿铁", "奶茶", "饮料"], category: "drink", kcal: 60, protein: 1, carbs: 8, fat: 2 },
+  { keywords: ["水果", "浆果", "草莓", "蓝莓", "苹果", "香蕉"], category: "fruit", kcal: 55, protein: 0.8, carbs: 13, fat: 0.2 },
+];
+const CATEGORY_DEFAULTS = {
+  staple: { kcal: 130, protein: 4, carbs: 27, fat: 1, grams: 150 },
+  meat: { kcal: 240, protein: 23, carbs: 0, fat: 15, grams: 120 },
+  seafood: { kcal: 120, protein: 20, carbs: 0, fat: 4, grams: 120 },
+  egg: { kcal: 155, protein: 13, carbs: 1, fat: 11, grams: 60 },
+  protein: { kcal: 110, protein: 10, carbs: 4, fat: 6, grams: 100 },
+  vegetable: { kcal: 35, protein: 2, carbs: 6, fat: 0.3, grams: 100 },
+  starchyVegetable: { kcal: 90, protein: 2, carbs: 20, fat: 0.2, grams: 100 },
+  sauce: { kcal: 180, protein: 2, carbs: 16, fat: 12, grams: 30 },
+  oil: { kcal: 884, protein: 0, carbs: 0, fat: 100, grams: 10 },
+  drink: { kcal: 60, protein: 1, carbs: 8, fat: 2, grams: 250 },
+  fruit: { kcal: 55, protein: 0.8, carbs: 13, fat: 0.2, grams: 100 },
+  other: { kcal: 120, protein: 5, carbs: 15, fat: 4, grams: 100 },
+};
 const FOOD_ANALYSIS_PROMPT = [
   "你是面向中国用户的营养师和食物图像识别助手。",
-  "任务：根据用户上传的食物图片，识别食物，估算总卡路里、份量和三大营养素。",
+  "任务：根据用户上传的食物图片，识别食物、拆分食材、估算每项克数。热量会由后端营养表计算，所以不要自由发挥精确热量。",
   "优先考虑中国饮食场景：米饭、面条、粉、粥、馒头、包子、饺子、炒菜、盖饭、麻辣烫、火锅、烧烤、卤味、汤粉面、地方小吃。",
   "估算规则：",
   "1. 先识别可见食材、主食、肉类、蔬菜、酱汁和油炸/煎炒/炖煮等烹饪方式。",
@@ -129,6 +160,7 @@ const FOOD_ANALYSIS_PROMPT = [
   "3. 中餐油、糖、酱汁差异大时，给出保守范围，不要伪装成精确称重。",
   "4. 混合菜、盖饭、火锅、麻辣烫、汤粉面必须考虑汤底/酱汁/油量不确定性。",
   "5. 如果图片不是食物或无法识别，isFood=false，并给出原因。",
+  "6. items.category 只能使用：staple, meat, seafood, egg, protein, vegetable, starchyVegetable, sauce, oil, drink, fruit, other。",
   "只返回 JSON，不要 Markdown，不要解释文字。",
   "JSON 字段必须是：",
   "{",
@@ -142,9 +174,10 @@ const FOOD_ANALYSIS_PROMPT = [
   "  \"carbs\": \"52g\",",
   "  \"fat\": \"29g\",",
   "  \"items\": [",
-  "    {\"name\": \"米饭\", \"portion\": \"约 150g\", \"calories\": 174},",
-  "    {\"name\": \"番茄炒蛋\", \"portion\": \"约 220g\", \"calories\": 310}",
+  "    {\"name\": \"米饭\", \"category\": \"staple\", \"estimatedGrams\": 150, \"portion\": \"约 150g\", \"cookingMethod\": \"蒸\"},",
+  "    {\"name\": \"番茄炒蛋\", \"category\": \"egg\", \"estimatedGrams\": 220, \"portion\": \"约 220g\", \"cookingMethod\": \"炒\"}",
   "  ],",
+  "  \"adjustments\": {\"mealSize\": \"standard\", \"stapleAmount\": \"auto\", \"meatAmount\": \"standard\", \"sauceAmount\": \"standard\"},",
   "  \"assumptions\": [\"按普通家常炒菜油量估算\", \"图片无法确认实际重量\"],",
   "  \"insight\": \"一句中文建议，必须提示这是估算值\"",
   "}",
@@ -214,7 +247,7 @@ function getApiStatus() {
 
   return {
     ready: hasLogMeal || hasOpenAI,
-    provider: hasLogMeal ? "LogMeal" : hasOpenAI ? "OpenAI" : "none",
+    provider: hasOpenAI ? "OpenAI" : hasLogMeal ? "LogMeal" : "none",
   };
 }
 
@@ -233,48 +266,47 @@ async function handleAnalyzeFood(req, res) {
   }
 
   const logMealToken = process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY;
+  let openAIError = null;
+
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      sendJson(res, 200, await analyzeWithOpenAI(imageDataUrl));
+      return;
+    } catch (error) {
+      openAIError = error;
+      if (!logMealToken) {
+        throw new Error(`OpenAI 识别失败：${error.message}`);
+      }
+      console.warn(`OpenAI failed, falling back to LogMeal: ${error.message}`);
+    }
+  }
 
   if (logMealToken) {
     try {
       sendJson(res, 200, await analyzeWithLogMeal(imageDataUrl, logMealToken));
       return;
     } catch (error) {
+      if (openAIError) {
+        throw new Error(`OpenAI 识别失败：${openAIError.message}；LogMeal 兜底失败：${error.message}`);
+      }
       if (!process.env.OPENAI_API_KEY) {
         throw new Error(`LogMeal 识别失败：${error.message}`);
       }
-      console.warn(`LogMeal failed, falling back to OpenAI: ${error.message}`);
     }
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    sendJson(res, 500, {
-      error: "缺少 LOGMEAL_API_USER_TOKEN 或 OPENAI_API_KEY，无法调用真实 AI 识别。",
-    });
-    return;
-  }
+  sendJson(res, 500, {
+    error: "缺少 OPENAI_API_KEY 或 LOGMEAL_API_USER_TOKEN，无法调用真实 AI 识别。",
+  });
+}
 
+async function analyzeWithOpenAI(imageDataUrl) {
   const aiResult = await callOpenAI(imageDataUrl);
-  sendJson(res, 200, normalizeFoodResult(aiResult));
+  return normalizeOpenAIFoodResult(aiResult);
 }
 
 async function analyzeWithLogMeal(imageDataUrl, token) {
-  const result = await callLogMeal(imageDataUrl, token);
-
-  if (!shouldReviewLogMealResult()) {
-    return result;
-  }
-
-  try {
-    const review = await callOpenAIReview(imageDataUrl, result);
-    return {
-      ...normalizeFoodResult(review),
-      provider: "logmeal+openai",
-      imageId: result.imageId,
-    };
-  } catch (error) {
-    console.warn(`OpenAI review failed, using LogMeal result: ${error.message}`);
-    return result;
-  }
+  return callLogMeal(imageDataUrl, token);
 }
 
 async function callLogMeal(imageDataUrl, token) {
@@ -517,55 +549,6 @@ async function callOpenAI(imageDataUrl) {
   return parseJsonFromText(extractOutputText(payload));
 }
 
-async function callOpenAIReview(imageDataUrl, logMealResult) {
-  const prompt = [
-    "请基于用户食物图片和 LogMeal 初步识别结果，输出更适合中国用户阅读的营养估算 JSON。",
-    "重点：把英文食物名改成自然中文；如果图片明显是中餐，请按中餐菜名表达；不要伪造精确重量。",
-    "除非图片明显不匹配，否则热量和营养素应参考 LogMeal 数值，只做合理小幅修正。",
-    "只返回 JSON，字段必须与下面的 LogMeal JSON 兼容。",
-    JSON.stringify(logMealResult),
-  ].join("\n");
-
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: prompt,
-            },
-            {
-              type: "input_image",
-              image_url: imageDataUrl,
-              detail: "high",
-            },
-          ],
-        },
-      ],
-    }),
-  });
-
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error?.message || "OpenAI 复核调用失败。");
-  }
-
-  return parseJsonFromText(extractOutputText(payload));
-}
-
-function shouldReviewLogMealResult() {
-  return process.env.OPENAI_API_KEY && process.env.OPENAI_REVIEW_LOGMEAL === "true";
-}
-
 function extractOutputText(payload) {
   if (typeof payload.output_text === "string") return payload.output_text;
 
@@ -588,6 +571,139 @@ function parseJsonFromText(text) {
     if (!match) throw new Error("AI 返回格式不是 JSON。");
     return JSON.parse(match[0]);
   }
+}
+
+function normalizeOpenAIFoodResult(result) {
+  if (result.isFood === false) {
+    throw new Error(String(result.insight || "图片中未识别到可计算热量的食物。"));
+  }
+
+  const items = normalizeOpenAIItems(result.items);
+
+  if (!items.length) {
+    return {
+      ...normalizeFoodResult(result),
+      provider: "openai",
+    };
+  }
+
+  const calories = Math.round(items.reduce((sum, item) => sum + item.calories, 0));
+  const grams = Math.round(items.reduce((sum, item) => sum + item.estimatedGrams, 0));
+  const protein = items.reduce((sum, item) => sum + item.proteinGrams, 0);
+  const carbs = items.reduce((sum, item) => sum + item.carbsGrams, 0);
+  const fat = items.reduce((sum, item) => sum + item.fatGrams, 0);
+  const calorieRange = normalizeCalorieRange(result.calorieRange, calories);
+  const assumptions = normalizeStringList(result.assumptions);
+  const insight = buildInsight(result.insight, calorieRange, assumptions);
+
+  return {
+    food: String(result.food || items.slice(0, 3).map((item) => item.name).join("、") || "识别到的餐食"),
+    calories,
+    calorieRange,
+    confidence: String(result.confidence || "中"),
+    portion: grams ? `约 ${grams}g` : String(result.portion || "约 1 份"),
+    protein: formatMacro(protein),
+    carbs: formatMacro(carbs),
+    fat: formatMacro(fat),
+    items,
+    adjustments: {
+      mealSize: "standard",
+      stapleAmount: "auto",
+      meatAmount: "standard",
+      sauceAmount: "standard",
+      ...(result.adjustments || {}),
+    },
+    assumptions,
+    insight,
+    provider: "openai+nutrition",
+  };
+}
+
+function normalizeOpenAIItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .slice(0, 8)
+    .map((item) => {
+      const name = String(item.name || "").trim();
+      if (!name) return null;
+
+      const category = normalizeFoodCategory(item.category);
+      const profile = findNutritionProfile(name, category);
+      const estimatedGrams =
+        parsePositiveNumber(item.estimatedGrams) ||
+        parsePositiveNumber(item.grams) ||
+        parseGramsFromText(item.portion) ||
+        profile.grams;
+      const calories = Math.round((estimatedGrams * profile.kcal) / 100);
+
+      return {
+        name,
+        category,
+        estimatedGrams: Math.round(estimatedGrams),
+        portion: item.portion ? String(item.portion) : `约 ${Math.round(estimatedGrams)}g`,
+        cookingMethod: String(item.cookingMethod || ""),
+        kcalPer100g: profile.kcal,
+        proteinPer100g: profile.protein,
+        carbsPer100g: profile.carbs,
+        fatPer100g: profile.fat,
+        calories,
+        proteinGrams: roundMacro((estimatedGrams * profile.protein) / 100),
+        carbsGrams: roundMacro((estimatedGrams * profile.carbs) / 100),
+        fatGrams: roundMacro((estimatedGrams * profile.fat) / 100),
+      };
+    })
+    .filter(Boolean);
+}
+
+function findNutritionProfile(name, category) {
+  const normalizedName = String(name).toLowerCase();
+  const profile = NUTRITION_PROFILES.find((item) =>
+    item.keywords.some((keyword) => normalizedName.includes(keyword.toLowerCase())),
+  );
+
+  if (profile) return profile;
+  return CATEGORY_DEFAULTS[category] || CATEGORY_DEFAULTS.other;
+}
+
+function normalizeFoodCategory(category) {
+  const aliases = {
+    主食: "staple",
+    肉类: "meat",
+    肉: "meat",
+    海鲜: "seafood",
+    蛋: "egg",
+    鸡蛋: "egg",
+    蛋白质: "protein",
+    蔬菜: "vegetable",
+    根茎类: "starchyVegetable",
+    酱汁: "sauce",
+    调料: "sauce",
+    油脂: "oil",
+    饮料: "drink",
+    水果: "fruit",
+  };
+  const value = String(category || "other").trim();
+  if (aliases[value]) return aliases[value];
+  return CATEGORY_DEFAULTS[value] ? value : "other";
+}
+
+function parsePositiveNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function parseGramsFromText(text) {
+  const match = String(text || "").match(/(\d+(?:\.\d+)?)\s*g/i);
+  return match ? parsePositiveNumber(match[1]) : 0;
+}
+
+function roundMacro(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function formatMacro(value) {
+  return `${Math.round(value)}g`;
 }
 
 function normalizeFoodResult(result) {

@@ -561,6 +561,99 @@ h2 {
   line-height: 1.55;
 }
 
+.adjust-panel {
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+  border-radius: 14px;
+  background: rgba(247, 248, 255, 0.9);
+  border: 1px solid rgba(132, 146, 190, 0.14);
+}
+
+.adjust-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adjust-heading h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.adjust-heading small {
+  color: #8991a6;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.adjust-group {
+  display: grid;
+  gap: 8px;
+}
+
+.adjust-group > span {
+  color: #6a7390;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.adjust-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adjust-group button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(132, 146, 190, 0.2);
+  border-radius: 999px;
+  color: #636b82;
+  background: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.adjust-group button.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #718fed, #9e96f0);
+  box-shadow: 0 8px 18px rgba(118, 143, 235, 0.22);
+}
+
+.manual-grams {
+  display: grid;
+  gap: 8px;
+}
+
+.manual-grams span {
+  color: #6a7390;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.manual-grams input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid rgba(132, 146, 190, 0.2);
+  border-radius: 12px;
+  padding: 0 12px;
+  color: #333747;
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  font-weight: 800;
+  outline: none;
+}
+
+.manual-grams input:focus {
+  border-color: rgba(113, 143, 237, 0.58);
+  box-shadow: 0 0 0 4px rgba(113, 143, 237, 0.12);
+}
+
 .feature-grid {
   margin-top: 16px;
   display: grid;

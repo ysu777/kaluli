@@ -136,6 +136,59 @@
             <span aria-hidden="true"></span>
             <p id="insight">蛋白质占比较高，适合作为训练后正餐。</p>
           </div>
+
+          <div class="adjust-panel" aria-label="调整份量">
+            <div class="adjust-heading">
+              <div>
+                <p class="panel-kicker">快速校正</p>
+                <h3>按实际份量调整</h3>
+              </div>
+              <small>无需重新识别</small>
+            </div>
+
+            <div class="adjust-group" data-adjust-group="mealSize">
+              <span>整体份量</span>
+              <div>
+                <button type="button" data-adjust="mealSize" data-value="small">偏少</button>
+                <button class="active" type="button" data-adjust="mealSize" data-value="standard">标准</button>
+                <button type="button" data-adjust="mealSize" data-value="large">偏多</button>
+              </div>
+            </div>
+
+            <div class="adjust-group" data-adjust-group="stapleAmount">
+              <span>主食</span>
+              <div>
+                <button type="button" data-adjust="stapleAmount" data-value="auto">按识别</button>
+                <button type="button" data-adjust="stapleAmount" data-value="none">无</button>
+                <button type="button" data-adjust="stapleAmount" data-value="half">半碗</button>
+                <button type="button" data-adjust="stapleAmount" data-value="one">一碗</button>
+                <button type="button" data-adjust="stapleAmount" data-value="two">两碗</button>
+              </div>
+            </div>
+
+            <div class="adjust-group" data-adjust-group="meatAmount">
+              <span>肉类</span>
+              <div>
+                <button type="button" data-adjust="meatAmount" data-value="small">偏少</button>
+                <button class="active" type="button" data-adjust="meatAmount" data-value="standard">标准</button>
+                <button type="button" data-adjust="meatAmount" data-value="large">偏多</button>
+              </div>
+            </div>
+
+            <div class="adjust-group" data-adjust-group="sauceAmount">
+              <span>酱汁油量</span>
+              <div>
+                <button type="button" data-adjust="sauceAmount" data-value="small">偏少</button>
+                <button class="active" type="button" data-adjust="sauceAmount" data-value="standard">标准</button>
+                <button type="button" data-adjust="sauceAmount" data-value="large">偏多</button>
+              </div>
+            </div>
+
+            <label class="manual-grams">
+              <span>整餐克数</span>
+              <input id="manual-grams" type="number" inputmode="numeric" min="1" max="3000" placeholder="可选，例如 420" />
+            </label>
+          </div>
         </div>
       </section>
 
