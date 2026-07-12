@@ -7,6 +7,7 @@ loadLocalEnv();
 const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || "127.0.0.1";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
+const QWEN_MODEL = process.env.DASHSCOPE_MODEL || "qwen-vl-plus";
 const LOGMEAL_BASE_URL = "https://api.logmeal.com/v2";
 const ROOT = __dirname;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -251,10 +252,12 @@ server.listen(PORT, HOST, () => {
 function getApiStatus() {
   const hasLogMeal = Boolean(process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY);
   const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  const hasQwen = Boolean(process.env.DASHSCOPE_API_KEY && getDashScopeBaseUrl());
+  const provider = selectPrimaryProvider({ hasQwen, hasOpenAI, hasLogMeal });
 
   return {
-    ready: hasLogMeal || hasOpenAI,
-    provider: hasOpenAI ? "OpenAI" : hasLogMeal ? "LogMeal" : "none",
+    ready: Boolean(provider),
+    provider: provider || "none",
   };
 }
 
@@ -272,44 +275,150 @@ async function handleAnalyzeFood(req, res) {
     return;
   }
 
-  const logMealToken = process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY;
-  let openAIError = null;
+  const providers = buildProviderOrder();
+  const errors = [];
 
-  if (process.env.OPENAI_API_KEY) {
+  for (const provider of providers) {
     try {
-      sendJson(res, 200, await analyzeWithOpenAI(imageDataUrl));
-      return;
-    } catch (error) {
-      openAIError = error;
-      if (!logMealToken) {
-        throw new Error(`OpenAI 识别失败：${error.message}`);
+      if (provider === "qwen") {
+        sendJson(res, 200, await analyzeWithQwen(imageDataUrl));
+        return;
       }
-      console.warn(`OpenAI failed, falling back to LogMeal: ${error.message}`);
+
+      if (provider === "openai") {
+        sendJson(res, 200, await analyzeWithOpenAI(imageDataUrl));
+        return;
+      }
+
+      if (provider === "logmeal") {
+        const token = process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY;
+        sendJson(res, 200, await analyzeWithLogMeal(imageDataUrl, token));
+        return;
+      }
+    } catch (error) {
+      errors.push(`${formatProviderName(provider)} 识别失败：${error.message}`);
+      console.warn(`${provider} failed: ${error.message}`);
+      if (process.env.AI_PROVIDER) break;
     }
   }
 
-  if (logMealToken) {
-    try {
-      sendJson(res, 200, await analyzeWithLogMeal(imageDataUrl, logMealToken));
-      return;
-    } catch (error) {
-      if (openAIError) {
-        throw new Error(`OpenAI 识别失败：${openAIError.message}；LogMeal 兜底失败：${error.message}`);
-      }
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error(`LogMeal 识别失败：${error.message}`);
-      }
-    }
+  if (errors.length) {
+    sendJson(res, 500, { error: errors.join("；") });
+    return;
   }
 
   sendJson(res, 500, {
-    error: "缺少 OPENAI_API_KEY 或 LOGMEAL_API_USER_TOKEN，无法调用真实 AI 识别。",
+    error: "缺少 DASHSCOPE_API_KEY、OPENAI_API_KEY 或 LOGMEAL_API_USER_TOKEN，无法调用真实 AI 识别。",
   });
+}
+
+function selectPrimaryProvider(status) {
+  const provider = normalizeAIProvider(process.env.AI_PROVIDER);
+
+  if (provider === "qwen") return status.hasQwen ? "Qwen" : "";
+  if (provider === "openai") return status.hasOpenAI ? "OpenAI" : "";
+  if (provider === "logmeal") return status.hasLogMeal ? "LogMeal" : "";
+
+  if (status.hasQwen) return "Qwen";
+  if (status.hasOpenAI) return "OpenAI";
+  if (status.hasLogMeal) return "LogMeal";
+  return "";
+}
+
+function buildProviderOrder() {
+  const provider = normalizeAIProvider(process.env.AI_PROVIDER);
+  const hasQwen = Boolean(process.env.DASHSCOPE_API_KEY && getDashScopeBaseUrl());
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  const hasLogMeal = Boolean(process.env.LOGMEAL_API_USER_TOKEN || process.env.LOGMEAL_API_KEY);
+
+  if (provider === "qwen") return hasQwen ? ["qwen"] : [];
+  if (provider === "openai") return hasOpenAI ? ["openai"] : [];
+  if (provider === "logmeal") return hasLogMeal ? ["logmeal"] : [];
+
+  return [
+    hasQwen ? "qwen" : "",
+    hasOpenAI ? "openai" : "",
+    hasLogMeal ? "logmeal" : "",
+  ].filter(Boolean);
+}
+
+function normalizeAIProvider(provider) {
+  const value = String(provider || "auto").trim().toLowerCase();
+  return ["qwen", "openai", "logmeal"].includes(value) ? value : "auto";
+}
+
+function formatProviderName(provider) {
+  if (provider === "qwen") return "Qwen";
+  if (provider === "openai") return "OpenAI";
+  if (provider === "logmeal") return "LogMeal";
+  return "AI";
+}
+
+function getDashScopeBaseUrl() {
+  if (process.env.DASHSCOPE_BASE_URL) {
+    return process.env.DASHSCOPE_BASE_URL.replace(/\/$/, "");
+  }
+
+  if (process.env.DASHSCOPE_WORKSPACE_ID) {
+    const region = process.env.DASHSCOPE_REGION || "cn-beijing";
+    return `https://${process.env.DASHSCOPE_WORKSPACE_ID}.${region}.maas.aliyuncs.com/compatible-mode/v1`;
+  }
+
+  return "";
+}
+
+async function analyzeWithQwen(imageDataUrl) {
+  const aiResult = await callQwen(imageDataUrl);
+  return normalizeOpenAIFoodResult(aiResult, "qwen+nutrition");
+}
+
+async function callQwen(imageDataUrl) {
+  const baseUrl = getDashScopeBaseUrl();
+
+  if (!baseUrl) {
+    throw new Error("缺少 DASHSCOPE_BASE_URL 或 DASHSCOPE_WORKSPACE_ID。");
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: QWEN_MODEL,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: imageDataUrl,
+              },
+            },
+            {
+              type: "text",
+              text: FOOD_ANALYSIS_PROMPT,
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.error?.message || payload.message || "Qwen API 调用失败。");
+  }
+
+  return parseJsonFromText(payload.choices?.[0]?.message?.content || "");
 }
 
 async function analyzeWithOpenAI(imageDataUrl) {
   const aiResult = await callOpenAI(imageDataUrl);
-  return normalizeOpenAIFoodResult(aiResult);
+  return normalizeOpenAIFoodResult(aiResult, "openai+nutrition");
 }
 
 async function analyzeWithLogMeal(imageDataUrl, token) {
@@ -580,7 +689,7 @@ function parseJsonFromText(text) {
   }
 }
 
-function normalizeOpenAIFoodResult(result) {
+function normalizeOpenAIFoodResult(result, provider = "openai+nutrition") {
   if (result.isFood === false) {
     throw new Error(String(result.insight || "图片中未识别到可计算热量的食物。"));
   }
@@ -590,7 +699,7 @@ function normalizeOpenAIFoodResult(result) {
   if (!items.length) {
     return {
       ...normalizeFoodResult(result),
-      provider: "openai",
+      provider,
     };
   }
 
@@ -622,7 +731,7 @@ function normalizeOpenAIFoodResult(result) {
     },
     assumptions,
     insight,
-    provider: "openai+nutrition",
+    provider,
   };
 }
 

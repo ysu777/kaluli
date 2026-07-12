@@ -327,6 +327,7 @@ function renderResult(result) {
 }
 
 function formatProvider(provider) {
+  if (provider === "qwen+nutrition") return "Qwen";
   if (provider === "openai+nutrition") return "OpenAI";
   if (provider === "openai") return "OpenAI";
   if (provider === "logmeal") return "LogMeal 兜底";
